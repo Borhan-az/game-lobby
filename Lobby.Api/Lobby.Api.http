@@ -1,0 +1,6 @@
+@Lobby.Api_HostAddress = http://localhost:5002
+
+GET {{Lobby.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

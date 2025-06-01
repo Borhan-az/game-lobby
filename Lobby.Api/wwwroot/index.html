@@ -1,0 +1,347 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lobby System Chat Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c; /* Dark background */
+            color: #e2e8f0; /* Light text */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .container {
+            background-color: #2d3748; /* Darker container */
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.2);
+            width: 100%;
+            max-width: 800px;
+        }
+
+        input, button, select, textarea {
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #4a5568;
+            background-color: #2d3748;
+            color: #e2e8f0;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #4299e1; /* Blue button */
+            color: white;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+            font-weight: bold;
+        }
+
+            button:hover {
+                background-color: #3182ce;
+            }
+
+            button:disabled {
+                background-color: #4a5568;
+                cursor: not-allowed;
+            }
+
+        .chat-box {
+            background-color: #1a202c;
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            border: 1px solid #4a5568;
+        }
+
+        .message {
+            margin-bottom: 8px;
+            word-wrap: break-word;
+        }
+
+            .message strong {
+                color: #63b3ed; /* Lighter blue for sender */
+            }
+
+            .message .system {
+                color: #a0aec0; /* Gray for system messages */
+                font-style: italic;
+            }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: bold;
+            margin-top: 20px;
+            margin-bottom: 15px;
+            color: #cbd5e0;
+        }
+
+        .lobby-list-box {
+            background-color: #1a202c;
+            border-radius: 8px;
+            padding: 15px;
+            min-height: 100px;
+            max-height: 250px;
+            overflow-y: auto;
+            margin-bottom: 15px;
+            border: 1px solid #4a5568;
+        }
+
+        .lobby-item {
+            margin-bottom: 5px;
+            padding: 5px;
+            background-color: #2d3748;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold text-center mb-6 text-white">Lobby System & Chat Client</h1>
+
+        <div class="p-6 bg-gray-700 rounded-lg mb-6">
+            <div class="section-title">Lobby Join (REST API)</div>
+            <input type="text" id="playerIdInput" placeholder="Enter Player ID (e.g., Player123)" class="mb-3">
+            <input type="text" id="preferredLobbyIdInput" placeholder="Optional: Preferred Lobby ID" class="mb-3">
+            <button id="joinLobbyBtn" class="bg-blue-500 hover:bg-blue-600">Join Lobby (REST)</button>
+            <div id="lobbyStatus" class="mt-3 text-sm text-gray-300"></div>
+        </div>
+
+        <div class="p-6 bg-gray-700 rounded-lg mb-6">
+            <div class="section-title">Active Lobbies (REST API)</div>
+            <button id="refreshLobbiesBtn" class="bg-purple-500 hover:bg-purple-600">Refresh Lobbies</button>
+            <div id="lobbyListBox" class="lobby-list-box mt-3"></div>
+        </div>
+
+        <div class="p-6 bg-gray-700 rounded-lg">
+            <div class="section-title">Lobby Chat (WebSocket)</div>
+            <input type="text" id="chatLobbyIdInput" placeholder="Lobby ID (from join above)" class="mb-3" disabled>
+            <button id="connectChatBtn" class="bg-green-500 hover:bg-green-600 mb-3">Connect to Chat</button>
+            <div class="chat-box" id="chatBox"></div>
+            <input type="text" id="messageInput" placeholder="Type your message..." disabled class="mb-3">
+            <button id="sendMessageBtn" disabled class="bg-indigo-500 hover:bg-indigo-600">Send Message</button>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/6.0.1/signalr.min.js"></script>
+    <script>
+        const playerIdInput = document.getElementById('playerIdInput');
+        const preferredLobbyIdInput = document.getElementById('preferredLobbyIdInput');
+        const joinLobbyBtn = document.getElementById('joinLobbyBtn');
+        const lobbyStatus = document.getElementById('lobbyStatus');
+        const refreshLobbiesBtn = document.getElementById('refreshLobbiesBtn');
+        const lobbyListBox = document.getElementById('lobbyListBox');
+        const chatLobbyIdInput = document.getElementById('chatLobbyIdInput');
+        const connectChatBtn = document.getElementById('connectChatBtn');
+        const chatBox = document.getElementById('chatBox');
+        const messageInput = document.getElementById('messageInput');
+        const sendMessageBtn = document.getElementById('sendMessageBtn');
+
+        let connection = null;
+        let currentLobbyId = null;
+        let currentPlayerId = null;
+
+        // Function to append messages to the chat box
+        // The 'message' argument is now consistently expected to be a JSON string
+        function appendMessage(sender, message) {
+            console.log("appendMessage called. Sender:", sender, "Message (raw):", message); // Debug log
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message');
+            let parsedMessage;
+            try {
+                parsedMessage = JSON.parse(message);
+                console.log("Message parsed:", parsedMessage); // Debug log
+            } catch (e) {
+                // Fallback if for some reason it's not JSON (shouldn't happen with current server logic)
+                console.warn("Received non-JSON message, parsing failed:", message, e); // Debug log
+                messageElement.innerHTML = `<strong>${sender}:</strong> ${message}`;
+                chatBox.appendChild(messageElement);
+                chatBox.scrollTop = chatBox.scrollHeight;
+                return;
+            }
+
+            // Now use the parsed message's Sender and Content
+            if (parsedMessage.Sender === 'System') {
+                messageElement.innerHTML = `<span class="system">${parsedMessage.Sender}:</span> ${parsedMessage.Content}`;
+            } else {
+                messageElement.innerHTML = `<strong>${parsedMessage.Sender}:</strong> ${parsedMessage.Content}`;
+            }
+
+            chatBox.appendChild(messageElement);
+            chatBox.scrollTop = chatBox.scrollHeight; // Auto-scroll to bottom
+            console.log("Message appended to chatBox."); // Debug log
+        }
+
+        // --- Lobby Join (REST API) ---
+        joinLobbyBtn.addEventListener('click', async () => {
+            const playerId = playerIdInput.value.trim();
+            const preferredLobbyId = preferredLobbyIdInput.value.trim();
+
+            if (!playerId) {
+                lobbyStatus.textContent = 'Please enter a Player ID.';
+                lobbyStatus.style.color = '#f56565'; // Red
+                return;
+            }
+
+            currentPlayerId = playerId; // Store current player ID
+
+            lobbyStatus.textContent = 'Joining lobby...';
+            lobbyStatus.style.color = '#ecc94b'; // Yellow
+
+            try {
+                const response = await fetch('/api/lobbies/join', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ playerId: playerId, preferredLobbyId: preferredLobbyId || null }),
+                });
+
+                const data = await response.json();
+
+                if (response.ok) { // Check response.ok for 2xx status codes
+                    lobbyStatus.textContent = data.message;
+                    lobbyStatus.style.color = '#48bb78'; // Green
+                    currentLobbyId = data.lobbyId;
+                    chatLobbyIdInput.value = currentLobbyId;
+                    connectChatBtn.disabled = false; // Enable chat connect button
+                    refreshLobbies(); // Refresh lobby list after joining
+                } else {
+                    lobbyStatus.textContent = `Error: ${data.message}`;
+                    lobbyStatus.style.color = '#f56565'; // Red
+                    currentLobbyId = null;
+                    chatLobbyIdInput.value = '';
+                    connectChatBtn.disabled = true;
+                }
+            } catch (error) {
+                console.error('Error joining lobby:', error);
+                lobbyStatus.textContent = 'An unexpected error occurred while joining lobby.';
+                lobbyStatus.style.color = '#f56565'; // Red
+                currentLobbyId = null;
+                chatLobbyIdInput.value = '';
+                connectChatBtn.disabled = true;
+            }
+        });
+
+        // --- Lobby List (REST API) ---
+        async function refreshLobbies() {
+            lobbyListBox.innerHTML = '<div class="text-gray-400">Loading lobbies...</div>';
+            try {
+                const response = await fetch('/api/lobbies/list');
+                const lobbies = await response.json();
+
+                lobbyListBox.innerHTML = ''; // Clear previous list
+                if (lobbies.length === 0) {
+                    lobbyListBox.innerHTML = '<div class="text-gray-400">No active lobbies.</div>';
+                } else {
+                    lobbies.forEach(lobby => {
+                        const lobbyItem = document.createElement('div');
+                        lobbyItem.classList.add('lobby-item');
+                        lobbyItem.textContent = `ID: ${lobby.lobbyId} | Players: ${lobby.currentPlayers}/${lobby.maxCapacity}`;
+                        lobbyListBox.appendChild(lobbyItem);
+                    });
+                }
+            } catch (error) {
+                console.error('Error fetching lobbies:', error);
+                lobbyListBox.innerHTML = '<div class="text-red-400">Failed to load lobbies.</div>';
+            }
+        }
+
+        refreshLobbiesBtn.addEventListener('click', refreshLobbies);
+
+        // Initial load of lobbies when the page loads
+        document.addEventListener('DOMContentLoaded', refreshLobbies);
+
+
+        // --- Chat (WebSocket) ---
+        connectChatBtn.addEventListener('click', async () => {
+            if (!currentLobbyId || !currentPlayerId) {
+                appendMessage('System', JSON.stringify({ Sender: 'System', Content: 'Please join a lobby first.' }));
+                return;
+            }
+
+            if (connection && connection.state === signalR.HubConnectionState.Connected) {
+                appendMessage('System', JSON.stringify({ Sender: 'System', Content: 'Already connected to chat.' }));
+                return;
+            }
+
+            appendMessage('System', JSON.stringify({ Sender: 'System', Content: `Connecting to chat for lobby ${currentLobbyId}...` }));
+            connectChatBtn.disabled = true;
+
+            connection = new signalR.HubConnectionBuilder()
+                .withUrl("/chatHub")
+                .withAutomaticReconnect()
+                .build();
+
+            connection.on("ReceiveMessage", (sender, message) => {
+                console.log("ReceiveMessage event fired! Sender:", sender, "Message:", message); // Debug log
+                appendMessage(sender, message);
+            });
+
+            connection.onreconnecting(error => {
+                appendMessage('System', JSON.stringify({ Sender: 'System', Content: `Connection lost. Reconnecting...` }));
+                console.warn(`Connection lost. Reconnecting: ${error}`);
+            });
+
+            connection.onreconnected(connectionId => {
+                appendMessage('System', JSON.stringify({ Sender: 'System', Content: `Connection reestablished. Connected with ID: ${connectionId}` }));
+                console.log(`Connection reestablished. Connected with ID: ${connectionId}`);
+                // Re-join the lobby chat group on re-connection
+                if (currentLobbyId && currentPlayerId) {
+                    connection.invoke("JoinLobbyChat", currentLobbyId, currentPlayerId)
+                        .catch(err => console.error("Failed to re-join lobby chat on reconnect:", err));
+                }
+            });
+
+            try {
+                await connection.start();
+                appendMessage('System', JSON.stringify({ Sender: 'System', Content: 'Connected to chat server.' }));
+                messageInput.disabled = false;
+                sendMessageBtn.disabled = false;
+
+                // Call the JoinLobbyChat method on the Hub
+                await connection.invoke("JoinLobbyChat", currentLobbyId, currentPlayerId);
+
+            } catch (err) {
+                appendMessage('System', JSON.stringify({ Sender: 'System', Content: `Failed to connect to chat: ${err}` }));
+                console.error(err);
+                connectChatBtn.disabled = false;
+            }
+        });
+
+        sendMessageBtn.addEventListener('click', async () => {
+            const message = messageInput.value.trim();
+            if (!message || !connection || connection.state !== signalR.HubConnectionState.Connected || !currentLobbyId || !currentPlayerId) {
+                return;
+            }
+
+            try {
+                await connection.invoke("SendMessageToLobby", currentLobbyId, currentPlayerId, message);
+                messageInput.value = ''; // Clear input after sending
+            } catch (err) {
+                appendMessage('System', JSON.stringify({ Sender: 'System', Content: `Error sending message: ${err}` }));
+                console.error(err);
+            }
+        });
+
+        messageInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                sendMessageBtn.click();
+            }
+        });
+
+    </script>
+</body>
+</html>

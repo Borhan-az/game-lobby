@@ -1,0 +1,60 @@
+# Visual Studio 2022
+.vs/
+*.sln.opt
+*.suo
+*.user
+*.userprefs
+*.designer.cs.linq
+*.log
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+artifacts/
+
+# Packages
+packages/
+*.nupkg
+*.snupkg
+*.symbols.nupkg
+
+# Rider
+.idea/
+*.iml
+
+# Dotnet tool
+.config/dotnet-tools.json
+.config/dotnet-svcutil/
+
+# Azure Functions
+AzureFunctions/
+.funcignore
+
+# VS Code
+.vscode/
+
+# Local data
+*.db
+*.sqlite
+*.mdf
+*.ldf
+
+# Test results
+*.trx
+*.coverage
+*.coveragexml
+
+# Publish
+publish/
+
+# Other common files
+*.bak
+*.orig
+*.swp
+*.swo
+*~
+*.temp
+temp/
