@@ -57,7 +57,7 @@ Steps
     Access Clients:
     Once docker compose up is running, your application will be accessible:
 
-        Lobby System & Chat Client (HTML): Go to http://localhost:7001/
+        Lobby System & Chat Client (HTML): Go to http://localhost:7001/index.html
 
         API (Swagger): Go to http://localhost:7001/swagger
 
